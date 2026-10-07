@@ -44,7 +44,8 @@ object Thumbnails {
                 tmp.outputStream().use { scaled.compress(Bitmap.CompressFormat.JPEG, 80, it) }
                 tmp.renameTo(file)
                 file
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Unreadable or unusual files just get a placeholder instead of a thumbnail.
                 null
             } finally {
                 try {

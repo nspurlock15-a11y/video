@@ -31,11 +31,57 @@ jobs:
           name: LocalStream-apk
           path: LocalStream.apk
 
+  # Runs the APK on an Android emulator: adds a folder through the system picker,
+  # plays an episode and enters picture-in-picture, failing on any crash.
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: LocalStream-apk
+
+      - name: Install ffmpeg (for sample videos)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash ci/smoke-test.sh LocalStream.apk
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-results
+          path: ci-out/
+
+  release:
+    needs: [build, smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: LocalStream-apk
+
       - name: Publish as a GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "build-${{ github.run_number }}" LocalStream.apk \
+            --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "LocalStream build ${{ github.run_number }}" \
             --notes "Built from ${{ github.ref_name }} @ ${GITHUB_SHA::7}. Download LocalStream.apk on your phone and open it to install or update." \

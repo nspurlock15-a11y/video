@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,7 +31,9 @@ object Library {
     private const val TAG = "Library"
 
     private lateinit var appContext: Context
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> Log.e(TAG, "Background task failed", e) },
+    )
     private val scanMutex = Mutex()
     private val fileMutex = Mutex()
     private var progressWrite: Job? = null
@@ -100,32 +103,38 @@ object Library {
     /** Re-reads every added folder to pick up new, moved or deleted files. */
     fun rescan() {
         scope.launch {
-            if (!scanMutex.tryLock()) return@launch
-            _scanning.value = true
-            try {
-                val scanner = LibraryScanner(appContext)
-                val granted = appContext.contentResolver.persistedUriPermissions.map { it.uri.toString() }.toSet()
-                val found = LinkedHashMap<String, Title>()
-                for (root in _roots.value) {
-                    if (root !in granted) {
-                        Log.w(TAG, "Lost access to $root, keeping previous entries")
-                        _titles.value.filter { it.rootUri == root }.forEach { found.putIfAbsent(it.id, it) }
-                        continue
-                    }
-                    try {
-                        scanner.scan(Uri.parse(root)).forEach { found.putIfAbsent(it.id, it) }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Scan of $root failed", e)
-                        _titles.value.filter { it.rootUri == root }.forEach { found.putIfAbsent(it.id, it) }
-                    }
+            // Scans queue up rather than being skipped, so a folder added mid-scan is still picked up.
+            scanMutex.withLock {
+                _scanning.value = true
+                try {
+                    scanAll()
+                } finally {
+                    _scanning.value = false
                 }
-                setTitles(found.values.sortedWith(compareBy<Title, String>(NameParser.NATURAL_ORDER) { it.name }))
-                saveLibrary()
-            } finally {
-                _scanning.value = false
-                scanMutex.unlock()
             }
         }
+    }
+
+    private suspend fun scanAll() {
+        val scanner = LibraryScanner(appContext)
+        val granted = appContext.contentResolver.persistedUriPermissions.map { it.uri.toString() }.toSet()
+        val found = LinkedHashMap<String, Title>()
+        for (root in _roots.value) {
+            val previous = _titles.value.filter { it.rootUri == root }
+            if (root !in granted) {
+                Log.w(TAG, "Lost access to $root, keeping previous entries")
+                previous.forEach { found.putIfAbsent(it.id, it) }
+                continue
+            }
+            try {
+                scanner.scan(Uri.parse(root)).forEach { found.putIfAbsent(it.id, it) }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Scan of $root failed", e)
+                previous.forEach { found.putIfAbsent(it.id, it) }
+            }
+        }
+        setTitles(found.values.sortedWith(compareBy<Title, String>(NameParser.NATURAL_ORDER) { it.name }))
+        saveLibrary()
     }
 
     private fun setTitles(list: List<Title>) {
