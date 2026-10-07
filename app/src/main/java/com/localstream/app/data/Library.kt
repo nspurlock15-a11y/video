@@ -134,6 +134,7 @@ object Library {
             }
         }
         setTitles(found.values.sortedWith(compareBy<Title, String>(NameParser.NATURAL_ORDER) { it.name }))
+        Log.i(TAG, "Scan finished: ${found.size} titles from ${_roots.value.size} folder(s)")
         saveLibrary()
     }
 

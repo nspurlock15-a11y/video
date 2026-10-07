@@ -24,6 +24,8 @@ check_alive() {
   echo "OK: $1"
 }
 finish() {
+  echo "---- app log ----"
+  adb logcat -d | grep -E " (Library|AndroidRuntime|LocalStream|PlaybackService|ExoPlayerImpl)" | tail -80
   adb logcat -d > "$OUT/logcat.txt"
   adb logcat -d -b crash > "$OUT/crash.txt" 2>/dev/null
   exit "$1"

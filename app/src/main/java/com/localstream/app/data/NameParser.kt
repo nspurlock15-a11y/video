@@ -35,7 +35,8 @@ object NameParser {
     private val JUNK = Regex(
         """(?i)(?<![a-z0-9])(480p|576p|720p|1080p|2160p|4k|uhd|hdr10?|dv|x264|x265|h ?26[45]|hevc|avc|web[ -]?dl|webrip|bluray|blu ?ray|brrip|bdrip|dvdrip|hdtv|hdrip|amzn|dsnp|hmax|atvp|aac(?:2 0|5 1)?|ac3|eac3|dts|ddp?(?:2|5) ?[01]|10bit|proper|repack|internal|remux)(?![a-z0-9])""",
     )
-    private val BRACKETS = Regex("""\[[^\]]*]|\{[^}]*}""")
+    // Android's regex engine (ICU) is stricter than desktop Java: escape every bracket and brace.
+    private val BRACKETS = Regex("""\[[^\]]*\]|\{[^\}]*\}""")
 
     fun parseEpisode(fileName: String): Parsed {
         val base = fileName.substringBeforeLast('.', fileName)
